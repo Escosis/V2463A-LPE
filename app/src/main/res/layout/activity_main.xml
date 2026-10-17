@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FAFAFA"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="权限状态检测"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:textColor="#212121"
+            android:layout_marginBottom="16dp" />
+
+        <TextView
+            android:id="@+id/tv_notification"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="15sp"
+            android:paddingVertical="10dp"
+            android:text="检测中..." />
+
+        <TextView
+            android:id="@+id/tv_overlay"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="15sp"
+            android:paddingVertical="10dp"
+            android:text="检测中..." />
+
+        <TextView
+            android:id="@+id/tv_battery"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="15sp"
+            android:paddingVertical="10dp"
+            android:text="检测中..." />
+
+        <TextView
+            android:id="@+id/tv_pairing"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="15sp"
+            android:paddingVertical="10dp"
+            android:text="检测中..." />
+
+        <TextView
+            android:id="@+id/tv_wifi"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="15sp"
+            android:paddingVertical="10dp"
+            android:text="检测中..." />
+
+        <TextView
+            android:id="@+id/tv_vivo_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="13sp"
+            android:paddingTop="16dp"
+            android:paddingBottom="24dp"
+            android:lineSpacingExtra="4dp"
+            android:text="加载中..." />
+
+        <Button
+            android:id="@+id/btn_auto_connect"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:text="一键连接并推送 preload.so"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#4CAF50"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btn_grant"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="8dp"
+            android:text="请求核心权限"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#2196F3" />
+
+        <Button
+            android:id="@+id/btn_pair"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="20dp"
+            android:text="开始无线调试配对"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#9C27B0" />
+
+    </LinearLayout>
+</ScrollView>

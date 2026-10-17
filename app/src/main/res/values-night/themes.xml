@@ -1,0 +1,10 @@
+<resources>
+    <style name="Theme.V2463ALPE" parent="@android:style/Theme.Material.NoActionBar" />
+
+    <!-- 开屏主题 (深色) -->
+    <style name="Theme.V2463ALPE.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#121212</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="postSplashScreenTheme">@style/Theme.V2463ALPE</item>
+    </style>
+</resources>

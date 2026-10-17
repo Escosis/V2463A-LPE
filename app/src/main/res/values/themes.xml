@@ -1,0 +1,13 @@
+<resources>
+    <style name="Theme.V2463ALPE" parent="@android:style/Theme.Material.Light.NoActionBar" />
+
+    <!-- 开屏主题 -->
+    <style name="Theme.V2463ALPE.Splash" parent="Theme.SplashScreen">
+        <!-- 开屏背景色 -->
+        <item name="windowSplashScreenBackground">@android:color/white</item>
+        <!-- 开屏图标（使用应用图标） -->
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <!-- 退出开屏后进入的主主题 -->
+        <item name="postSplashScreenTheme">@style/Theme.V2463ALPE</item>
+    </style>
+</resources>
