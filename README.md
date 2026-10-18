@@ -67,3 +67,4 @@ chmod 755 /apex/com.android.virt/bin/su
 - CVE-43499 漏洞发现与原始 PoC 贡献者
 - UI 框架：Compose Multiplatform / Miuix
 - ROOT 管理器：KernelSU 及其分支
+- preload.so 及 fix-avf-su.sh 贡献者
