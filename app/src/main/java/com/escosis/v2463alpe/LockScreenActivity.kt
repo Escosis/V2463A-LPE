@@ -50,6 +50,7 @@ import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import androidx.compose.ui.text.font.FontWeight
+import java.io.File
 
 class LockScreenActivity : ComponentActivity() {
 
@@ -250,9 +251,9 @@ class LockScreenActivity : ComponentActivity() {
                     }
                 }
 
-                val finished = doneLatch.await(30, TimeUnit.SECONDS)
+                val finished = doneLatch.await(20, TimeUnit.SECONDS)
                 if (!finished) {
-                    appendLog("late-load 超时 30s，继续")
+                    appendLog("late-load 超时 20s，继续")
                 } else {
                     appendLog("late-load 命令已结束")
                 }
@@ -295,6 +296,42 @@ class LockScreenActivity : ComponentActivity() {
                         try {
                             AppStateHolder.refreshNow(this)
                         } catch (_: Exception) {}
+
+                        if (Prefs.isAutoSoftReboot(this)) {
+                            val softRebootFlag = getSoftRebootFlagFile()
+                            var flagWritten = false
+                            try {
+                                softRebootFlag.writeText("1")
+                                flagWritten = true
+                                appendLog("已写入软重启标志")
+                            } catch (e: Exception) {
+                                Log.e(TAG, "写软重启标志失败", e)
+                                appendLog("写软重启标志失败: " + e.message)
+                            }
+
+                            appendLog("执行 ksud soft-reboot...")
+                            try {
+                                val rebootOut = AdbClient.shellWithSerial(
+                                    this, serial, "su -c 'ksud soft-reboot'"
+                                )
+                                appendLog("soft-reboot: " + rebootOut.trim())
+                            } catch (e: Exception) {
+                                Log.e(TAG, "soft-reboot 异常", e)
+                                appendLog("soft-reboot 异常: " + e.message)
+                                if (flagWritten) {
+                                    try {
+                                        softRebootFlag.delete()
+                                        appendLog("软重启命令异常，已删除标志")
+                                    } catch (_: Exception) {}
+                                }
+                            }
+                            appendLog("软重启已触发，跳过无线调试清理")
+                            try {
+                                AppStateHolder.refreshNow(this)
+                            } catch (_: Exception) {}
+                            mainHandler.post { finish() }
+                            return
+                        }
                     } else {
                         appendLog("验证失败，未记录 Root 状态")
                     }
@@ -344,6 +381,11 @@ class LockScreenActivity : ComponentActivity() {
         } catch (e: Exception) {
             appendLog("开无线调试失败: " + e.message)
         }
+    }
+
+    private fun getSoftRebootFlagFile(): File {
+        val deContext = createDeviceProtectedStorageContext()
+        return File(deContext.filesDir, "soft_reboot_pending.flag")
     }
 
     override fun onDestroy() {

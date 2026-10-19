@@ -473,7 +473,7 @@ fun PairingScreen() {
             containerColor = MiuixTheme.colorScheme.surface,
             titleContentColor = MiuixTheme.colorScheme.onSurface,
             textContentColor = MiuixTheme.colorScheme.onSurface,
-            title = { Text("提示") },
+            title = { Text("提示",fontSize = 20.sp,) },
             text = {
                 Text(
                     "请开启「开发者设置」中的「无线调试」，在询问是否允许无线调试时勾选「始终允许」，然后利用分屏或小窗使本应用与设置同屏以进行配对"
@@ -502,7 +502,7 @@ fun PairingScreen() {
             containerColor = MiuixTheme.colorScheme.surface,
             titleContentColor = MiuixTheme.colorScheme.onSurface,
             textContentColor = MiuixTheme.colorScheme.onSurface,
-            title = { Text("查看指令") },
+            title = { Text("查看指令",fontSize = 20.sp,) },
             text = {
                 Column {
                     Text("1. 授予 WRITE_SECURE_SETTINGS", color = MiuixTheme.colorScheme.onSurface)

@@ -34,6 +34,17 @@ public class BootReceiver extends BroadcastReceiver {
 
         Context deContext = context.createDeviceProtectedStorageContext();
 
+        File softRebootFlag = new File(deContext.getFilesDir(), "soft_reboot_pending.flag");
+        if (softRebootFlag.exists()) {
+            try {
+                softRebootFlag.delete();
+                Log.d(TAG, "检测到软重启标志，已删除，跳过锁屏界面");
+            } catch (Exception e) {
+                Log.e(TAG, "删除软重启标志失败", e);
+            }
+            return;
+        }
+
         File stage1Flag = new File(deContext.getFilesDir(), "escalate_stage1_done.flag");
         boolean stage1Done = stage1Flag.exists();
         if (stage1Done) {

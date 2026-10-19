@@ -14,6 +14,28 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
+/**
+ * 从 `adb devices` 输出中解析第一个 state 为 device 的 127.0.0.1:<port>。
+ * 返回 -1 表示没有可用的本地回环设备。
+ *
+ * 预期行格式：`127.0.0.1:37655\tdevice`
+ * 多个 127.0.0.1 时取第一个（不符合预期，但按设计直接采用第一个）。
+ */
+private fun parseFirstLoopbackDevicePort(devicesOutput: String): Int {
+    for (rawLine in devicesOutput.lines()) {
+        val line = rawLine.trim()
+        val tab = line.indexOf('\t')
+        if (tab <= 0) continue
+        val serial = line.substring(0, tab)
+        val state = line.substring(tab + 1)
+        if (state != "device") continue
+        if (!serial.startsWith("127.0.0.1:")) continue
+        val port = serial.substringAfter("127.0.0.1:").toIntOrNull() ?: continue
+        if (port in 1..65535) return port
+    }
+    return -1
+}
+
 object AdbPairingHelper {
 
     private const val TAG = "AdbPairingHelper"
@@ -125,7 +147,7 @@ object AdbPairingHelper {
         return try {
             val t0 = System.currentTimeMillis()
             val WIFI_TIMEOUT = 10_000L
-            val MDNS_TOTAL = 30_000L
+            val MDNS_TOTAL = 20_000L
             val PUT_INT_INTERVAL = 3_000L
 
             log("[1/4] 检查 Wi-Fi...")
@@ -196,7 +218,7 @@ object AdbPairingHelper {
             }
 
             if (foundPort <= 0) {
-                log("[失败] 30s 未发现 mDNS 广播")
+                log("[失败] mDNS 未发现广播，可能无线调试未授权")
                 return false
             }
             log("[3/4] mDNS 发现端口: " + foundPort
@@ -205,21 +227,25 @@ object AdbPairingHelper {
             AdbClient.connect(context, "127.0.0.1", foundPort)
             try { Thread.sleep(400) } catch (_: InterruptedException) {}
 
-            var connected = false
+            var actualPort = -1
             for (i in 0 until 4) {
                 val devices = AdbClient.devices(context)
-                if (devices.lines().any { it.contains("\tdevice") && !it.contains("offline") }) {
-                    connected = true
+                val p = parseFirstLoopbackDevicePort(devices)
+                if (p > 0) {
+                    actualPort = p
                     break
                 }
                 AdbClient.connect(context, "127.0.0.1", foundPort)
                 try { Thread.sleep(400) } catch (_: InterruptedException) {}
             }
 
-            if (connected) {
+            if (actualPort > 0) {
+                if (actualPort != foundPort) {
+                    log("[连接] 实际端口 $actualPort 与 mDNS 发现端口 $foundPort 不同，采用实际端口")
+                }
                 connectedHostState = "127.0.0.1"
-                connectedPortState = foundPort
-                log("[4/4] 连接成功 127.0.0.1:" + foundPort
+                connectedPortState = actualPort
+                log("[4/4] 连接成功 127.0.0.1:" + actualPort
                         + "（" + (System.currentTimeMillis() - t0) + "ms）")
                 true
             } else {

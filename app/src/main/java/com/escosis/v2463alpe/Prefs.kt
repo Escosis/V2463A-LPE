@@ -26,6 +26,19 @@ object Prefs {
     private const val KEY_KSU_PACKAGE = "ksu_package"
     private const val KEY_ACTIVE_KSU_PKG = "active_ksu_pkg"
     private const val KEY_APP_ENABLED = "app_enabled"
+    private const val KEY_AUTO_SOFT_REBOOT = "auto_soft_reboot"
+    private const val KEY_AUTO_CHECK_UPDATE = "auto_check_update"
+
+    fun isAutoCheckUpdate(context: Context): Boolean =
+        sp(context).getBoolean(KEY_AUTO_CHECK_UPDATE, true)
+
+    fun setAutoCheckUpdate(context: Context, v: Boolean) =
+        sp(context).edit().putBoolean(KEY_AUTO_CHECK_UPDATE, v).apply()
+    fun isAutoSoftReboot(context: Context): Boolean =
+        sp(context).getBoolean(KEY_AUTO_SOFT_REBOOT, false)
+
+    fun setAutoSoftReboot(context: Context, v: Boolean) =
+        sp(context).edit().putBoolean(KEY_AUTO_SOFT_REBOOT, v).apply()
 
     fun isAppEnabled(context: Context): Boolean =
         sp(context).getBoolean(KEY_APP_ENABLED, true)

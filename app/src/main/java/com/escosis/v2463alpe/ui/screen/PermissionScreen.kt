@@ -392,7 +392,7 @@ fun PermissionScreen(onNavigateToPairing: () -> Unit) {
             containerColor = MiuixTheme.colorScheme.surface,
             titleContentColor = MiuixTheme.colorScheme.onSurface,
             textContentColor = MiuixTheme.colorScheme.onSurface,
-            title = { Text("授予 OEM 权限") },
+            title = { Text("授予 OEM 权限",fontSize = 20.sp,) },
             text = {
                 Text(
                     "将前往设置中的应用详情页，请点击「查看所有权限」，并开启以下项：\n\n" +
@@ -422,7 +422,7 @@ fun PermissionScreen(onNavigateToPairing: () -> Unit) {
             containerColor = MiuixTheme.colorScheme.surface,
             titleContentColor = MiuixTheme.colorScheme.onSurface,
             textContentColor = MiuixTheme.colorScheme.onSurface,
-            title = { Text("无线调试授权") },
+            title = { Text("无线调试授权",fontSize = 20.sp,) },
             text = {
                 Text(
                     "WRITE_SECURE_SETTINGS 是系统级权限，无法通过普通权限申请授予，" +
@@ -451,7 +451,7 @@ fun PermissionScreen(onNavigateToPairing: () -> Unit) {
             containerColor = MiuixTheme.colorScheme.surface,
             titleContentColor = MiuixTheme.colorScheme.onSurface,
             textContentColor = MiuixTheme.colorScheme.onSurface,
-            title = { Text("管理器授权") },
+            title = { Text("管理器授权",fontSize = 20.sp,) },
             text = {
                 Text(
                     if (!isBuiltin) {

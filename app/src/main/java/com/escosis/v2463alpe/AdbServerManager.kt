@@ -172,7 +172,6 @@ object AdbServerManager {
         }
     }
 
-    /** 快速探测 5037 是否就绪 */
     @JvmStatic
     fun isServerReadyFast(): Boolean = isPortReady()
 

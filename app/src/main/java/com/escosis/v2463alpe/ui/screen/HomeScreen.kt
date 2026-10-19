@@ -97,8 +97,8 @@ private fun StatusCard(status: AppStatus) {
             ) {
                 Icon(
                     painter = painterResource(
-                        id = if (ready) R.drawable.ic_check_circle_outline
-                        else R.drawable.ic_error_outline
+                        id = if (ready) R.drawable.ic_round_check_circle_outline
+                        else R.drawable.ic_round_error_outline
                     ),
                     contentDescription = null,
                     tint = iconTint,
@@ -144,7 +144,7 @@ private fun InfoCard(status: AppStatus) {
             InfoRow(R.drawable.ic_tag, "应用版本", appVersion)
             InfoRow(R.drawable.ic_phone_android, "安卓版本", Build.VERSION.RELEASE)
             InfoRow(R.drawable.ic_developer_board, "内核版本", System.getProperty("os.version") ?: "?")
-            InfoRow(R.drawable.ic_info, "设备型号", Build.MODEL)
+            InfoRow(R.drawable.ic_round_info, "设备型号", Build.MODEL)
             InfoRow(
                 R.drawable.ic_security, "权限状态",
                 when {
