@@ -30,7 +30,7 @@
 为了让提权流程在锁屏且未解密用户数据的情况下完全自动化，本应用在 Android 系统框架层面绕过了多项限制：
 
 - **Direct Boot 模式**：应用声明了 `android:directBootAware="true"` 并监听 `LOCKED_BOOT_COMPLETED` 广播，确保在用户输入密码解锁前，应用进程能够被系统拉起。
-- **自动开启无线调试**：在锁屏状态下，应用利用系统应用或预授权的 `WRITE_SECURE_SETTINGS` 权限，直接向 `Settings.Global` 写入 `adb_wifi_enabled=1`，强行触发系统的无线调试服务。
+- **自动开启无线调试**：在锁屏状态下，应用利用预授权的 `WRITE_SECURE_SETTINGS` 权限，直接向 `Settings.Global` 写入 `adb_wifi_enabled=1`，强行触发系统的无线调试服务。
 - **mDNS 自动发现**：应用在后台启动本地 mDNS 扫描，精准捕获系统 `adbd` 广播的 `_adb-tls-connect._tcp` 服务端口，并通过 `127.0.0.1` 建立回环连接。
 - **DE 存储保护密钥**：由于未解锁时 CE（Credential Encrypted）存储不可读，应用将自连所需的 ADB 密钥强制存储在 DE（Device Encrypted）存储中，确保锁屏下 `libadb` 依然能正常读取并完成验证。
 
@@ -71,7 +71,7 @@ chmod 755 /apex/com.android.virt/bin/su
 
 
 ## 致谢
-- CVE-43499 漏洞发现与原始 PoC 贡献者
+- CVE-2026-43499 漏洞发现与原始 PoC 贡献者
 - UI 框架：Compose Multiplatform / Miuix
 - ROOT 管理器：KernelSU 及其分支
 - preload.so 及 fix-avf-su.sh 贡献者
