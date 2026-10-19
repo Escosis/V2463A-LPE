@@ -25,6 +25,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -42,6 +43,7 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.preference.SwitchPreference
 
 private val flavorNames = listOf("KernelSU", "KernelSU Next", "SukiSU-Ultra", "自定义")
 private val flavorPackages = listOf(
@@ -78,10 +80,34 @@ fun SettingsScreen(
         contentPadding = PaddingValues(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        item(key = "app_enabled") {
+            var enabled by remember { mutableStateOf(Prefs.isAppEnabled(ctx)) }
+            Card(modifier = Modifier.fillMaxWidth()) {
+                SwitchPreference(
+                    title = "应用启用",
+                    summary = "关闭后开机将不再显示锁屏提权界面",
+                    checked = enabled,
+                    onCheckedChange = {
+                        enabled = it
+                        Prefs.setAppEnabled(ctx, it)
+                    },
+                    startAction = {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_apps),
+                            contentDescription = null,
+                            modifier = Modifier.padding(end = 6.dp).size(24.dp),
+                            tint = MiuixTheme.colorScheme.onSurface,
+                        )
+                    },
+                )
+            }
+        }
+
         item(key = "theme") {
             Card(modifier = Modifier.fillMaxWidth()) {
                 OverlayDropdownPreference(
                     title = "主题",
+                    summary = "选择应用外观",
                     items = listOf("跟随系统", "浅色", "深色"),
                     startAction = {
                         Icon(
@@ -105,6 +131,7 @@ fun SettingsScreen(
                 Column(modifier = Modifier.padding(bottom = if (selectedIndex == 3) 16.dp else 0.dp)) {
                     OverlayDropdownPreference(
                         title = "管理器分支",
+                        summary = "选择用于提权持久化的管理器分支",
                         items = flavorNames,
                         startAction = {
                             Icon(

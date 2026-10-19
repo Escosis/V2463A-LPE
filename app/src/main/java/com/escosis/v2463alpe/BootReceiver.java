@@ -27,6 +27,11 @@ public class BootReceiver extends BroadcastReceiver {
 
         Log.d(TAG, "LOCKED_BOOT_COMPLETED 收到");
 
+        if (!Prefs.INSTANCE.isAppEnabled(context)) {
+            Log.d(TAG, "应用已禁用，跳过锁屏界面");
+            return;
+        }
+
         Context deContext = context.createDeviceProtectedStorageContext();
 
         File stage1Flag = new File(deContext.getFilesDir(), "escalate_stage1_done.flag");

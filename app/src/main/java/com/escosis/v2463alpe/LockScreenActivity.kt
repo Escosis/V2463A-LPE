@@ -80,6 +80,12 @@ class LockScreenActivity : ComponentActivity() {
 
         val isTest = intent.getBooleanExtra("EXTRA_IS_TEST", false)
 
+        if (!Prefs.isAppEnabled(this) && !isTest) {
+            Log.d(TAG, "应用已禁用，直接 finish")
+            finish()
+            return
+        }
+
         val km = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
         if (!isTest && !isStep2 && km != null && !km.isKeyguardLocked) {
             Log.d(TAG, "非锁屏且非第二步，直接 finish")
@@ -134,9 +140,19 @@ class LockScreenActivity : ComponentActivity() {
         if (isTest) return
 
         val km = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
-        if (km != null && !km.isKeyguardLocked) {
-            finish()
-        }
+        if (km == null || km.isKeyguardLocked) return
+
+        Log.d(TAG, "onResume: 疑似未锁屏，800ms 后二次确认")
+        mainHandler.postDelayed({
+            if (isFinishing || isDestroyed) return@postDelayed
+            val km2 = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+            if (km2 != null && !km2.isKeyguardLocked) {
+                Log.d(TAG, "onResume: 确认未锁屏，finish")
+                finish()
+            } else {
+                Log.d(TAG, "onResume: 二次确认仍锁定，保持界面")
+            }
+        }, 800)
     }
 
     private fun appendLog(msg: String) {

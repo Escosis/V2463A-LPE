@@ -95,7 +95,7 @@ fun AboutScreen(onBack: () -> Unit) {
             Spacer(Modifier.height(24.dp))
 
             Text(
-                text = "基于 CVE-43499 的面向 iQOO Neo10 Pro+ 及同芯片 iQOO 设备的锁屏界面自动提权工具",
+                text = "基于 CVE-2026-43499 的高成功率锁屏界面自动提权工具，仅面向 iQOO Neo10 Pro+ 及相同芯片（骁龙8e）相同系统版本（OriginOS 6）设备。",
                 fontSize = 14.sp,
                 color = MiuixTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center,

@@ -24,8 +24,14 @@ object Prefs {
     private const val KEY_FIRST_LAUNCH_DONE = "first_launch_done"
     private const val KEY_FIRST_LAUNCH_PENDING = "first_launch_pending"
     private const val KEY_KSU_PACKAGE = "ksu_package"
-
     private const val KEY_ACTIVE_KSU_PKG = "active_ksu_pkg"
+    private const val KEY_APP_ENABLED = "app_enabled"
+
+    fun isAppEnabled(context: Context): Boolean =
+        sp(context).getBoolean(KEY_APP_ENABLED, true)
+
+    fun setAppEnabled(context: Context, v: Boolean) =
+        sp(context).edit().putBoolean(KEY_APP_ENABLED, v).apply()
 
     fun getActiveKsuPackage(context: Context): String =
         sp(context).getString(KEY_ACTIVE_KSU_PKG, "") ?: ""
