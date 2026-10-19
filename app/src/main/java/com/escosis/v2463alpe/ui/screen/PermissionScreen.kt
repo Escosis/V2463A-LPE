@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -44,6 +45,7 @@ import com.escosis.v2463alpe.BootReceiver
 import com.escosis.v2463alpe.LockScreenActivity
 import com.escosis.v2463alpe.Prefs
 import com.escosis.v2463alpe.R
+import com.escosis.v2463alpe.ksuDisplayName
 import com.escosis.v2463alpe.ui.AppStateHolder
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -52,6 +54,12 @@ import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+
+private val BUILTIN_KSU_PACKAGES = setOf(
+    "me.weishu.kernelsu",
+    "vctsrt.cntgtj.uqfwgg",
+    "com.sukisu.ultra",
+)
 
 @Composable
 fun PermissionScreen(onNavigateToPairing: () -> Unit) {
@@ -63,6 +71,7 @@ fun PermissionScreen(onNavigateToPairing: () -> Unit) {
     var directRequestInProgress by remember { mutableStateOf(false) }
     var showGrantDialog by remember { mutableStateOf(false) }
     var showWirelessDialog by remember { mutableStateOf(false) }
+    var showKsuManagerDialog by remember { mutableStateOf(false) }
     var stepIndex by remember { mutableIntStateOf(-1) }
     var waitingForResume by remember { mutableStateOf(false) }
     var isAutoRequest by remember { mutableStateOf(false) }
@@ -90,6 +99,33 @@ fun PermissionScreen(onNavigateToPairing: () -> Unit) {
                 Uri.parse("package:${context.packageName}")
             )
         )
+    }
+
+    fun doOpenKsuManager() {
+        val pkg = Prefs.getKsuPackage(context)
+        if (pkg.isBlank()) {
+            Toast.makeText(context, "请先在设置中配置管理器包名", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (pkg !in BUILTIN_KSU_PACKAGES) {
+            Toast.makeText(
+                context,
+                "自定义包名无法直接打开，请手动从桌面启动管理器",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        val intent = context.packageManager.getLaunchIntentForPackage(pkg)
+        if (intent == null) {
+            Toast.makeText(
+                context,
+                "未检测到已安装的 ${ksuDisplayName(pkg)}",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
     }
 
     fun startRequest(auto: Boolean) {
@@ -214,7 +250,7 @@ fun PermissionScreen(onNavigateToPairing: () -> Unit) {
                         summary = "申请：悬浮窗、忽略电池优化、自启动、锁屏显示、后台弹出界面",
                         startAction = {
                             Icon(
-                                painterResource(R.drawable.ic_open_in_new),
+                                painterResource(R.drawable.ic_settings),
                                 contentDescription = null,
                                 modifier = Modifier.padding(end = 6.dp).size(24.dp),
                                 tint = MiuixTheme.colorScheme.onSurface,
@@ -224,7 +260,7 @@ fun PermissionScreen(onNavigateToPairing: () -> Unit) {
                     )
                     ArrowPreference(
                         title = "无线调试",
-                        summary = "申请：WRITE_SECURE_SETTINGS",
+                        summary = "申请 WRITE_SECURE_SETTINGS，并始终允许通过当前网络进行无线调试",
                         startAction = {
                             Icon(
                                 painterResource(R.drawable.ic_wifi),
@@ -234,6 +270,19 @@ fun PermissionScreen(onNavigateToPairing: () -> Unit) {
                             )
                         },
                         onClick = { showWirelessDialog = true },
+                    )
+                    ArrowPreference(
+                        title = "管理器授权",
+                        summary = "提权后在管理器中授予 ROOT ，并启用传统 SU 命令支持",
+                        startAction = {
+                            Icon(
+                                painterResource(R.drawable.ic_tag),
+                                contentDescription = null,
+                                modifier = Modifier.padding(end = 6.dp).size(24.dp),
+                                tint = MiuixTheme.colorScheme.onSurface,
+                            )
+                        },
+                        onClick = { showKsuManagerDialog = true },
                     )
                 }
             }
@@ -249,12 +298,6 @@ fun PermissionScreen(onNavigateToPairing: () -> Unit) {
                 )
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                        PermissionItem(
-                            name = "ROOT",
-                            summary = "用于显示提权状态，阻止已 ROOT 软重启时的锁屏提权面板显示",
-                            ok = status.hasRoot,
-                            loading = status.isLoading
-                        )
                         PermissionItem(
                             name = "悬浮窗",
                             summary = "用于在锁屏和后台弹出界面",
@@ -294,6 +337,16 @@ fun PermissionScreen(onNavigateToPairing: () -> Unit) {
                         ManualItem(
                             name = "始终允许无线调试",
                             summary = "用于自动连接无线调试（由于对话框的显示需解锁）",
+                        )
+                        PermissionItem(
+                            name = "ROOT",
+                            summary = "用于显示提权状态，阻止提权完成执行软重启后的锁屏提权面板显示",
+                            ok = status.hasRoot,
+                            loading = status.isLoading
+                        )
+                        ManualItem(
+                            name = "管理器传统 SU 命令支持",
+                            summary = "用于检测提权状态以及修复假权限",
                         )
                     }
                 }
@@ -346,7 +399,7 @@ fun PermissionScreen(onNavigateToPairing: () -> Unit) {
                             "· 自启动\n" +
                             "· 锁屏显示\n" +
                             "· 后台弹出界面\n\n" +
-                    "请注意，这三项权限为厂商自定义权限，应用无法直接检测其是否成功获取，请确保已获取后再重启执行提权。"
+                            "请注意，这三项权限为厂商自定义权限，应用无法直接检测其是否成功获取，请确保已获取后再重启执行提权。"
                 )
             },
             confirmButton = {
@@ -374,7 +427,8 @@ fun PermissionScreen(onNavigateToPairing: () -> Unit) {
                 Text(
                     "WRITE_SECURE_SETTINGS 是系统级权限，无法通过普通权限申请授予，" +
                             "只能借助无线调试（ADB）方式完成。\n\n" +
-                            "请在配对页完成配对并连接后，点击「执行指令」授予该权限，同时推送提权必需的 preload.so。"
+                            "即将前往配对页面，请在配对与连接后，点击「执行指令」授予该权限，同时推送提权必需的 preload.so。\n\n" +
+                    "在开启无线调试时请务必勾选「始终允许」。"
                 )
             },
             confirmButton = {
@@ -383,6 +437,47 @@ fun PermissionScreen(onNavigateToPairing: () -> Unit) {
                     onNavigateToPairing()
                 }) {
                     Text("前往配对", color = MiuixTheme.colorScheme.primary)
+                }
+            },
+        )
+    }
+
+    if (showKsuManagerDialog) {
+        val pkg = Prefs.getKsuPackage(context)
+        val name = if (pkg.isBlank()) "未知管理器" else ksuDisplayName(pkg)
+        val isBuiltin = pkg in BUILTIN_KSU_PACKAGES
+        AlertDialog(
+            onDismissRequest = { showKsuManagerDialog = false },
+            containerColor = MiuixTheme.colorScheme.surface,
+            titleContentColor = MiuixTheme.colorScheme.onSurface,
+            textContentColor = MiuixTheme.colorScheme.onSurface,
+            title = { Text("管理器授权") },
+            text = {
+                Text(
+                    if (!isBuiltin) {
+                        "当前为自定义包名（$pkg），无法直接打开管理器。\n\n" +
+                                "请在提权后手动启动该管理器，并为本应用授予 ROOT 权限，" +
+                                "并确保已启用「传统 SU 命令支持」。"
+                    } else {
+                        "即将打开 $name。\n\n" +
+                                "请在提权后于该管理器中为本应用授予 ROOT 权限，" +
+                                "并确保已启用「传统 SU 命令支持」。"
+                    }
+                    + "\n\nROOT 权限有无不影响提权流程；传统 SU 命令支持在管理器中应当是默认启用的，无需配置，若提权后发现禁用则请启用后重启重新提权。"
+                )
+            },
+            confirmButton = {
+                if (isBuiltin) {
+                    TextButton(onClick = {
+                        showKsuManagerDialog = false
+                        doOpenKsuManager()
+                    }) {
+                        Text("打开管理器", color = MiuixTheme.colorScheme.primary)
+                    }
+                } else {
+                    TextButton(onClick = { showKsuManagerDialog = false }) {
+                        Text("知道了", color = MiuixTheme.colorScheme.primary)
+                    }
                 }
             },
         )

@@ -68,7 +68,7 @@ private fun StatusCard(status: AppStatus) {
         status.isLoading -> ""
         !ready -> "缺少: ${status.missingLabel}"
         isRoot -> "管理器：${ksuDisplayName(status.activeKsuPackage)}"
-        else -> "请再次确认 OEM 权限是否获取，\n然后重启执行提权"
+        else -> "请再次确认标注感叹号的配置是否完成，\n然后重启执行提权"
     }
 
     val cardColor = when {
