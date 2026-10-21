@@ -21,6 +21,7 @@
         <package android:name="me.weishu.kernelsu" />
         <package android:name="vctsrt.cntgtj.uqfwgg" />
         <package android:name="com.sukisu.ultra" />
+        <package android:name="com.resukisu.resukisu" />
     </queries>
 
     <application

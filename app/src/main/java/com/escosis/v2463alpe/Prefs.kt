@@ -7,6 +7,7 @@ fun ksuDisplayName(pkg: String): String = when (pkg) {
     "me.weishu.kernelsu"   -> "KernelSU"
     "vctsrt.cntgtj.uqfwgg" -> "KernelSU Next"
     "com.sukisu.ultra"     -> "SukiSU-Ultra"
+    "com.resukisu.resukisu" -> "BakaSU"
     ""                     -> "未知"
     else                   -> pkg
 }

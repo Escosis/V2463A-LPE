@@ -55,11 +55,12 @@ import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
-private val flavorNames = listOf("KernelSU", "KernelSU Next", "SukiSU-Ultra", "自定义")
+private val flavorNames = listOf("KernelSU", "KernelSU Next", "SukiSU-Ultra", "BakaSU", "自定义")
 private val flavorPackages = listOf(
     "me.weishu.kernelsu",
     "vctsrt.cntgtj.uqfwgg",
-    "com.sukisu.ultra"
+    "com.sukisu.ultra",
+    "com.resukisu.resukisu"
 )
 
 @Composable
@@ -74,7 +75,7 @@ fun SettingsScreen(
     var currentPkg by remember { mutableStateOf(Prefs.getKsuPackage(ctx)) }
     var selectedIndex by remember {
         val idx = flavorPackages.indexOf(currentPkg)
-        mutableIntStateOf(if (idx >= 0) idx else 3)
+        mutableIntStateOf(if (idx >= 0) idx else 4)
     }
 
     var themeExpanded by remember { mutableStateOf(false) }
@@ -101,7 +102,7 @@ fun SettingsScreen(
                     var enabled by remember { mutableStateOf(Prefs.isAppEnabled(ctx)) }
                     SwitchPreference(
                         title = "应用启用",
-                        summary = "关闭后开机将不再显示锁屏提权界面",
+                        summary = "关闭后开机不显示锁屏提权面板",
                         checked = enabled,
                         onCheckedChange = {
                             enabled = it
@@ -133,7 +134,7 @@ fun SettingsScreen(
                         onExpandedChange = { ksuExpanded = it },
                         onSelectedIndexChange = { newIndex ->
                             selectedIndex = newIndex
-                            if (newIndex < 3) {
+                            if (newIndex < 4) {
                                 currentPkg = flavorPackages[newIndex]
                                 Prefs.setKsuPackage(ctx, currentPkg)
                             } else {
@@ -146,7 +147,7 @@ fun SettingsScreen(
                     )
 
                     AnimatedVisibility(
-                        visible = selectedIndex == 3,
+                        visible = selectedIndex == 4,
                         enter = fadeIn() + expandVertically(),
                         exit = fadeOut() + shrinkVertically()
                     ) {
@@ -231,7 +232,7 @@ fun SettingsScreen(
                     var autoCheck by remember { mutableStateOf(Prefs.isAutoCheckUpdate(ctx)) }
                     SwitchPreference(
                         title = "自动检查更新",
-                        summary = "关闭后应用启动将不再自动检查新版本",
+                        summary = "应用启动时自动检查新版本",
                         checked = autoCheck,
                         onCheckedChange = {
                             autoCheck = it

@@ -59,6 +59,7 @@ private val BUILTIN_KSU_PACKAGES = setOf(
     "me.weishu.kernelsu",
     "vctsrt.cntgtj.uqfwgg",
     "com.sukisu.ultra",
+    "com.resukisu.resukisu",
 )
 
 @Composable
