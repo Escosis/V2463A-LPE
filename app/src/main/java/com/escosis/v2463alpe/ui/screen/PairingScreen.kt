@@ -2,7 +2,12 @@ package com.escosis.v2463alpe.ui.screen
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.gestures.ScrollableDefaults
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -48,6 +53,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.escosis.v2463alpe.AdbPairingHelper
+import com.escosis.v2463alpe.Prefs
 import com.escosis.v2463alpe.PreloadPusher
 import com.escosis.v2463alpe.R
 import com.escosis.v2463alpe.ui.AppStateHolder
@@ -97,6 +103,10 @@ fun PairingScreen() {
     var inputCode by remember { mutableStateOf("") }
     var showSplitDialog by remember { mutableStateOf(false) }
     var showCmdDialog by remember { mutableStateOf(false) }
+    var showPreloadSourceDialog by remember { mutableStateOf(false) }
+
+    var customPreloadActive by remember { mutableStateOf(Prefs.isCustomPreload(context)) }
+    var customPreloadName by remember { mutableStateOf(Prefs.getCustomPreloadName(context)) }
 
     fun appendLog(msg: String) {
         val time = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
@@ -104,6 +114,47 @@ fun PairingScreen() {
         scope.launch(Dispatchers.Main) {
             logs.add(line)
             while (logs.size > 200) logs.removeAt(0)
+        }
+    }
+
+    val preloadPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    val name = queryDisplayName(context, uri)
+                    val bytes = context.contentResolver.openInputStream(uri)
+                        ?.use { it.readBytes() }
+                    if (bytes == null) {
+                        appendLog("读取文件失败")
+                        return@withContext null
+                    }
+                    if (bytes.isEmpty()) {
+                        appendLog("文件为空")
+                        return@withContext null
+                    }
+                    if (bytes.size > PreloadPusher.MAX_CUSTOM_SIZE) {
+                        appendLog("文件过大（${bytes.size / 1024 / 1024}MB > 20MB），已拒绝")
+                        return@withContext null
+                    }
+                    if (PreloadPusher.saveCustomPreload(context, bytes, name)) {
+                        appendLog("已保存自定义 preload.so: $name（${bytes.size} bytes）")
+                        name
+                    } else {
+                        appendLog("保存失败")
+                        null
+                    }
+                } catch (e: Exception) {
+                    appendLog("选择文件异常: ${e.message}")
+                    null
+                }
+            }
+            if (result != null) {
+                customPreloadActive = true
+                customPreloadName = result
+            }
         }
     }
 
@@ -405,6 +456,30 @@ fun PairingScreen() {
                                 }
                             },
                         )
+
+                        ArrowPreference(
+                            title = "preload.so 来源",
+                            summary = if (customPreloadActive)
+                                "自定义：${customPreloadName.ifBlank { "custom.so" }}"
+                            else
+                                "默认（assets/preload.so）",
+                            modifier = Modifier.alpha(
+                                if (busyAction != null) 0.4f else 1f
+                            ),
+                            startAction = {
+                                Icon(
+                                    painterResource(R.drawable.ic_file_upload),
+                                    contentDescription = null,
+                                    modifier = Modifier.padding(end = 6.dp).size(24.dp),
+                                    tint = MiuixTheme.colorScheme.onSurface,
+                                )
+                            },
+                            onClick = {
+                                if (busyAction != null) return@ArrowPreference
+                                showPreloadSourceDialog = true
+                            },
+                        )
+
                         ArrowPreference(
                             title = "查看指令",
                             modifier = Modifier.alpha(
@@ -473,7 +548,7 @@ fun PairingScreen() {
             containerColor = MiuixTheme.colorScheme.surface,
             titleContentColor = MiuixTheme.colorScheme.onSurface,
             textContentColor = MiuixTheme.colorScheme.onSurface,
-            title = { Text("提示",fontSize = 20.sp,) },
+            title = { Text("提示", fontSize = 20.sp) },
             text = {
                 Text(
                     "请开启「开发者设置」中的「无线调试」，在询问是否允许无线调试时勾选「始终允许」，然后利用分屏或小窗使本应用与设置同屏以进行配对"
@@ -493,6 +568,53 @@ fun PairingScreen() {
         )
     }
 
+    if (showPreloadSourceDialog) {
+        AlertDialog(
+            onDismissRequest = { showPreloadSourceDialog = false },
+            containerColor = MiuixTheme.colorScheme.surface,
+            titleContentColor = MiuixTheme.colorScheme.onSurface,
+            textContentColor = MiuixTheme.colorScheme.onSurface,
+            title = { Text("preload.so 来源", fontSize = 20.sp) },
+            text = {
+                Text(
+                    "默认使用应用内置的 preload.so，适配内核版本 6.6.89-android15-8-g1f71897ac249-abogki467805059-4k。\n\n" +
+                            "支持自定义 preload.so 文件，请确保所选文件与当前设备内核版本匹配，否则将提权失败。\n\n当前：" +
+                            if (customPreloadActive) {
+                                "自定义（${customPreloadName.ifBlank { "custom.so" }}）"
+                            } else {
+                                "默认"
+                            },
+                    color = MiuixTheme.colorScheme.onSurface,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showPreloadSourceDialog = false
+                    preloadPicker.launch(arrayOf("*/*"))
+                }) {
+                    Text("选择文件", color = MiuixTheme.colorScheme.primary)
+                }
+            },
+            dismissButton = {
+                if (customPreloadActive) {
+                    TextButton(onClick = {
+                        showPreloadSourceDialog = false
+                        PreloadPusher.clearCustomPreload(context)
+                        customPreloadActive = false
+                        customPreloadName = ""
+                        appendLog("已恢复默认 preload.so")
+                    }) {
+                        Text("恢复默认", color = MiuixTheme.colorScheme.primary)
+                    }
+                } else {
+                    TextButton(onClick = { showPreloadSourceDialog = false }) {
+                        Text("取消", color = MiuixTheme.colorScheme.primary)
+                    }
+                }
+            },
+        )
+    }
+
     if (showCmdDialog) {
         val cmdGrant = "adb shell pm grant ${context.packageName} android.permission.WRITE_SECURE_SETTINGS"
         val cmdPush = "adb push preload.so /data/local/tmp/preload.so && adb shell chmod 755 /data/local/tmp/preload.so"
@@ -502,7 +624,7 @@ fun PairingScreen() {
             containerColor = MiuixTheme.colorScheme.surface,
             titleContentColor = MiuixTheme.colorScheme.onSurface,
             textContentColor = MiuixTheme.colorScheme.onSurface,
-            title = { Text("查看指令",fontSize = 20.sp,) },
+            title = { Text("查看指令", fontSize = 20.sp) },
             text = {
                 Column {
                     Text("1. 授予 WRITE_SECURE_SETTINGS", color = MiuixTheme.colorScheme.onSurface)
@@ -553,6 +675,21 @@ fun PairingScreen() {
                 }
             },
         )
+    }
+}
+
+private fun queryDisplayName(context: Context, uri: Uri): String {
+    return try {
+        context.contentResolver.query(
+            uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null
+        )?.use { c ->
+            if (c.moveToFirst()) {
+                val idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (idx >= 0) c.getString(idx) else null
+            } else null
+        } ?: uri.lastPathSegment ?: "custom.so"
+    } catch (_: Exception) {
+        uri.lastPathSegment ?: "custom.so"
     }
 }
 
