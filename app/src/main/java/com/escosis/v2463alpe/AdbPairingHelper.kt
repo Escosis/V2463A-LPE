@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.annotation.RequiresApi
 import java.io.File
@@ -261,15 +263,29 @@ object AdbPairingHelper {
         }
     }
 
+    /**
+     * 第一阶段提权。
+     *
+     * @param onLog 日志回调
+     * @param onFinished 结束时回调。true = 第一阶段成功但设备未自动重启，可直接进入第二阶段；
+     *                   false = 第一阶段失败，已触发重启（或无法进入第二阶段）。
+     */
     @JvmStatic
-    fun escalate(context: Context, onLog: ((String) -> Unit)? = null) {
+    fun escalate(
+        context: Context,
+        onLog: ((String) -> Unit)? = null,
+        onFinished: ((Boolean) -> Unit)? = null
+    ) {
         fun log(s: String) {
             Log.d(TAG, s)
             onLog?.invoke(s)
         }
 
+        val mainHandler = Handler(Looper.getMainLooper())
+
         if (connectedHostState == null || connectedPortState <= 0) {
             log("[失败] 未连接，请先执行一键连接")
+            mainHandler.post { onFinished?.invoke(false) }
             return
         }
 
@@ -284,6 +300,34 @@ object AdbPairingHelper {
 
         AdbClient.shellStream(context, cmd, serial) { line ->
             log(line)
+
+            if (line.startsWith("[结束]")) {
+                Thread {
+                    try {
+                        Thread.sleep(1000)
+                    } catch (_: InterruptedException) {
+                        return@Thread
+                    }
+                    if (flagFile.exists()) {
+                        log("[检测] 第一阶段成功但设备未自动重启")
+                        try { flagFile.delete() } catch (_: Exception) {}
+                        mainHandler.post { onFinished?.invoke(true) }
+                    } else {
+                        log("[失败] 第一阶段未成功，重启设备")
+                        try {
+                            val out = AdbClient.runAdb(
+                                context, null, "-s", serial, "shell", "reboot"
+                            )
+                            log("[重启] 返回: " + out.trim().ifBlank { "(空)" })
+                        } catch (e: Exception) {
+                            Log.e(TAG, "重启失败", e)
+                            log("[重启] 异常: " + e.message)
+                        }
+                        mainHandler.post { onFinished?.invoke(false) }
+                    }
+                }.start()
+                return@shellStream
+            }
 
             if (stage1Done.get()) return@shellStream
 
@@ -305,9 +349,11 @@ object AdbPairingHelper {
                 if (!stage1Done.compareAndSet(false, true)) return@shellStream
                 log("[失败] 首次 cfi miss，重启设备重新尝试")
                 Thread {
-                    Thread.sleep(1500)
+                    try { Thread.sleep(1000) } catch (_: InterruptedException) { return@Thread }
                     try {
-                        val out = AdbClient.runAdb(context, null, "-s", serial, "shell", "reboot")
+                        val out = AdbClient.runAdb(
+                            context, null, "-s", serial, "shell", "reboot"
+                        )
                         log("[重启] 返回: " + out.trim().ifBlank { "(空)" })
                     } catch (e: Exception) {
                         Log.e(TAG, "重启失败", e)

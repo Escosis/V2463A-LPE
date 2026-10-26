@@ -38,19 +38,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.escosis.v2463alpe.ui.AppStateHolder
-import top.yukonga.miuix.kmp.basic.Card
 import com.escosis.v2463alpe.ui.theme.AppTheme
+import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import androidx.compose.ui.text.font.FontWeight
-import java.io.File
 
 class LockScreenActivity : ComponentActivity() {
 
@@ -128,7 +128,7 @@ class LockScreenActivity : ComponentActivity() {
         appendLog("模式: " + if (isStep2) "第二步" else "第一步")
         appendLog(if (isStep2) "将自动开始第二步" else "点击「连接并提权」开始")
 
-        if (isStep2) {
+        if (isStep2 && !isTest) {
             mainHandler.postDelayed({ performConnectAndEscalate() }, 500)
         }
     }
@@ -224,28 +224,66 @@ class LockScreenActivity : ComponentActivity() {
             appendLog("无线调试已连接")
 
             if (isStep2) {
-                val pkgName = Prefs.getKsuPackage(this)
-                val serial = "127.0.0.1:" + AdbPairingHelper.getConnectedPort()
+                runStep2AfterConnected()
+                return
+            }
 
-                appendLog("目标管理器包名: $pkgName")
-                appendLog("当前设备: $serial")
-                appendLog("正在通过 find 定位 libksud.so ...")
+            appendLog("执行第一步提权...")
+            AdbPairingHelper.escalate(
+                this,
+                { msg -> appendLog(msg) },
+                { success ->
+                    if (success) {
+                        appendLog("第一阶段成功但设备未自动重启，复用当前连接直接进入第二阶段")
+                        mode = BootReceiver.MODE_STEP2
+                        Thread { runStep2AfterConnected() }.start()
+                    } else {
+                        appendLog("第一阶段失败，设备即将重启")
+                    }
+                }
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "异常", e)
+            appendLog("异常: " + e.message)
+            busy = false
+        }
+    }
 
-                val innerCmd = "export ANDROID_SERIAL=$serial; " +
-                        "echo \"Target: $pkgName\"; " +
-                        "so_path=\$(find /data/app -name libksud.so 2>/dev/null | grep \"$pkgName\" | head -n 1); " +
-                        "if [ -z \"\$so_path\" ]; then echo 'SO_NOT_FOUND'; exit 1; fi; " +
-                        "echo \"Found SO: \$so_path\"; " +
-                        "chmod 755 \"\$so_path\" 2>&1 || { echo 'CHMOD_FAILED'; exit 1; }; " +
-                        "\"\$so_path\" late-load --allow-shell --package-name $pkgName 2>&1; " +
-                        "echo 'LATE_EXIT:'\$?"
+    private fun runStep2AfterConnected() {
+        try {
+            val pkgName = Prefs.getKsuPackage(this)
+            val serial = "127.0.0.1:" + AdbPairingHelper.getConnectedPort()
 
-                val safeInnerCmd = innerCmd.replace("'", "'\\''")
-                val cmd = "su -c '$safeInnerCmd'"
+            appendLog("目标管理器包名: $pkgName")
+            appendLog("当前设备: $serial")
+            appendLog("正在通过 find 定位 libksud.so ...")
 
+            val innerCmd = "export ANDROID_SERIAL=$serial; " +
+                    "echo \"Target: $pkgName\"; " +
+                    "so_path=\$(find /data/app -name libksud.so 2>/dev/null | grep \"$pkgName\" | head -n 1); " +
+                    "if [ -z \"\$so_path\" ]; then echo 'SO_NOT_FOUND'; exit 1; fi; " +
+                    "echo \"Found SO: \$so_path\"; " +
+                    "chmod 755 \"\$so_path\" 2>&1 || { echo 'CHMOD_FAILED'; exit 1; }; " +
+                    "\"\$so_path\" late-load --allow-shell --package-name $pkgName 2>&1; " +
+                    "echo 'LATE_EXIT:'\$?"
+
+            val safeInnerCmd = innerCmd.replace("'", "'\\''")
+
+            val suPaths = listOf(
+                "su",
+                "/data/local/tmp/su",
+                "/apex/com.android.virt/bin/su"
+            )
+            var lateLoadOk = false
+            for ((idx, suPath) in suPaths.withIndex()) {
+                val cmd = "$suPath -c '$safeInnerCmd'"
+                appendLog("执行 late-load（尝试 $suPath）...")
+
+                val sb = StringBuilder()
                 val doneLatch = CountDownLatch(1)
                 AdbClient.shellStream(this, cmd, serial) { line ->
                     appendLog(line)
+                    sb.append(line).append('\n')
                     if (line.startsWith("[结束]")) {
                         doneLatch.countDown()
                     }
@@ -253,113 +291,147 @@ class LockScreenActivity : ComponentActivity() {
 
                 val finished = doneLatch.await(20, TimeUnit.SECONDS)
                 if (!finished) {
-                    appendLog("late-load 超时 20s，继续")
+                    appendLog("late-load 超时 20s")
                 } else {
                     appendLog("late-load 命令已结束")
                 }
 
-                appendLog("等待 /system/bin/su 就绪...")
-                val realSu = "/system/bin/su"
-                var suReady = false
-                for (i in 0 until 30) {
-                    val idOut = AdbClient.shellWithSerial(this, serial, "$realSu -c id")
-                    if (idOut.contains("uid=0")) {
-                        suReady = true
-                        appendLog("su 已就绪 (" + (i * 500) + "ms)")
-                        break
+                val out = sb.toString()
+                val daemonRefused = out.contains("su: connect daemon: Connection refused")
+                if (daemonRefused) {
+                    if (idx < suPaths.lastIndex) {
+                        appendLog("$suPath 不可用，改用 ${suPaths[idx + 1]} 重试")
+                        continue
                     }
-                    Thread.sleep(500)
+                    appendLog("所有 su 路径均不可用")
+                    appendLog("late-load 失败，停止第二步")
+                    busy = false
+                    return
                 }
 
-                if (!suReady) {
-                    appendLog("su 未就绪，跳过 AVF su 修复")
-                } else {
-                    appendLog("修复 AVF su...")
-                    val wrapper = "#!/system/bin/sh\nexec $realSu \"\$@\"\n"
-                    val b64 = Base64.encodeToString(wrapper.toByteArray(), Base64.NO_WRAP)
-                    val fixCmd = "$realSu -c \"rm -f /apex/com.android.virt/bin/su" +
-                            " && echo '$b64' | base64 -d > /apex/com.android.virt/bin/su" +
-                            " && chmod 755 /apex/com.android.virt/bin/su" +
-                            " && echo FIX_OK\""
-                    val fixOut = AdbClient.shellWithSerial(this, serial, fixCmd)
-                    appendLog("fix: " + fixOut.trim())
-
-                    val verifyOut = AdbClient.shellWithSerial(this, serial, "su -c id")
-                    appendLog("verify: " + verifyOut.trim())
-
-                    if (verifyOut.contains("uid=0")) {
-                        Prefs.setHasRoot(this, true)
-                        Prefs.setRootChecked(this, true)
-                        Prefs.setActiveKsuPackage(this, pkgName)
-                        appendLog("状态已更新：已 Root")
-
-                        try {
-                            AppStateHolder.refreshNow(this)
-                        } catch (_: Exception) {}
-
-                        if (Prefs.isAutoSoftReboot(this)) {
-                            val softRebootFlag = getSoftRebootFlagFile()
-                            var flagWritten = false
-                            try {
-                                softRebootFlag.writeText("1")
-                                flagWritten = true
-                                appendLog("已写入软重启标志")
-                            } catch (e: Exception) {
-                                Log.e(TAG, "写软重启标志失败", e)
-                                appendLog("写软重启标志失败: " + e.message)
-                            }
-
-                            appendLog("执行 ksud soft-reboot...")
-                            try {
-                                val rebootOut = AdbClient.shellWithSerial(
-                                    this, serial, "su -c 'ksud soft-reboot'"
-                                )
-                                appendLog("soft-reboot: " + rebootOut.trim())
-                            } catch (e: Exception) {
-                                Log.e(TAG, "soft-reboot 异常", e)
-                                appendLog("soft-reboot 异常: " + e.message)
-                                if (flagWritten) {
-                                    try {
-                                        softRebootFlag.delete()
-                                        appendLog("软重启命令异常，已删除标志")
-                                    } catch (_: Exception) {}
-                                }
-                            }
-                            appendLog("软重启已触发，跳过无线调试清理")
-                            try {
-                                AppStateHolder.refreshNow(this)
-                            } catch (_: Exception) {}
-                            mainHandler.post { finish() }
-                            return
-                        }
-                    } else {
-                        appendLog("验证失败，未记录 Root 状态")
+                val soNotFound = out.contains("SO_NOT_FOUND")
+                val chmodFailed = out.contains("CHMOD_FAILED")
+                val lateExit = Regex("LATE_EXIT:(\\d+)").find(out)
+                    ?.groupValues?.get(1)?.toIntOrNull()
+                if (soNotFound || chmodFailed || (lateExit != null && lateExit != 0)) {
+                    val reason = when {
+                        soNotFound -> "SO_NOT_FOUND"
+                        chmodFailed -> "CHMOD_FAILED"
+                        else -> "LATE_EXIT=$lateExit"
                     }
+                    appendLog("late-load 失败（$reason），停止第二步")
+                    busy = false
+                    return
                 }
+                lateLoadOk = true
+                break
+            }
 
-                appendLog("正在关闭无线调试...")
+            if (!lateLoadOk) {
+                appendLog("late-load 未成功，停止第二步")
+                busy = false
+                return
+            }
+
+            appendLog("等待 /system/bin/su 就绪...")
+            val realSu = "/system/bin/su"
+            var suReady = false
+            for (i in 0 until 30) {
+                val idOut = AdbClient.shellWithSerial(this, serial, "$realSu -c id")
+                if (idOut.contains("uid=0")) {
+                    suReady = true
+                    appendLog("su 已就绪 (" + (i * 500) + "ms)")
+                    break
+                }
+                Thread.sleep(500)
+            }
+
+            if (!suReady) {
+                appendLog("su 未就绪，第二步失败")
+                busy = false
+                return
+            }
+
+            appendLog("修复 AVF su...")
+            val wrapper = "#!/system/bin/sh\nexec $realSu \"\$@\"\n"
+            val b64 = Base64.encodeToString(wrapper.toByteArray(), Base64.NO_WRAP)
+            val fixCmd = "$realSu -c \"rm -f /apex/com.android.virt/bin/su" +
+                    " && echo '$b64' | base64 -d > /apex/com.android.virt/bin/su" +
+                    " && chmod 755 /apex/com.android.virt/bin/su" +
+                    " && echo FIX_OK\""
+            val fixOut = AdbClient.shellWithSerial(this, serial, fixCmd)
+            appendLog("fix: " + fixOut.trim())
+
+            val verifyOut = AdbClient.shellWithSerial(this, serial, "su -c id")
+            appendLog("verify: " + verifyOut.trim())
+
+            if (!verifyOut.contains("uid=0")) {
+                appendLog("验证失败，未记录 Root 状态，第二步失败")
+                busy = false
+                return
+            }
+
+            Prefs.setHasRoot(this, true)
+            Prefs.setRootChecked(this, true)
+            Prefs.setActiveKsuPackage(this, pkgName)
+            appendLog("状态已更新：已 Root")
+
+            try {
+                AppStateHolder.refreshNow(this)
+            } catch (_: Exception) {}
+
+            if (Prefs.isAutoSoftReboot(this)) {
+                val softRebootFlag = getSoftRebootFlagFile()
+                var flagWritten = false
                 try {
-                    android.provider.Settings.Global.putInt(contentResolver, "adb_wifi_enabled", 0)
-                    AdbServerManager.killExistingServer(this)
+                    softRebootFlag.writeText("1")
+                    flagWritten = true
+                    appendLog("已写入软重启标志")
                 } catch (e: Exception) {
-                    Log.e(TAG, "关闭无线调试失败", e)
+                    Log.e(TAG, "写软重启标志失败", e)
+                    appendLog("写软重启标志失败: " + e.message)
                 }
-                appendLog("无线调试已关闭")
 
-                Thread.sleep(1000)
-                appendLog("第二步完成，界面即将关闭")
-                Thread.sleep(1000)
+                appendLog("执行 ksud soft-reboot...")
+                try {
+                    val rebootOut = AdbClient.shellWithSerial(
+                        this, serial, "su -c 'ksud soft-reboot'"
+                    )
+                    appendLog("soft-reboot: " + rebootOut.trim())
+                } catch (e: Exception) {
+                    Log.e(TAG, "soft-reboot 异常", e)
+                    appendLog("soft-reboot 异常: " + e.message)
+                    if (flagWritten) {
+                        try {
+                            softRebootFlag.delete()
+                            appendLog("软重启命令异常，已删除标志")
+                        } catch (_: Exception) {}
+                    }
+                }
+                appendLog("软重启已触发，跳过无线调试清理")
+                try {
+                    AppStateHolder.refreshNow(this)
+                } catch (_: Exception) {}
                 mainHandler.post { finish() }
                 return
-            } else {
-                appendLog("执行第一步提权...")
-                AdbPairingHelper.escalate(this) { msg ->
-                    appendLog(msg)
-                }
             }
+
+            appendLog("正在关闭无线调试...")
+            try {
+                android.provider.Settings.Global.putInt(contentResolver, "adb_wifi_enabled", 0)
+                AdbServerManager.killExistingServer(this)
+            } catch (e: Exception) {
+                Log.e(TAG, "关闭无线调试失败", e)
+            }
+            appendLog("无线调试已关闭")
+
+            Thread.sleep(1000)
+            appendLog("第二步完成，界面即将关闭")
+            Thread.sleep(1000)
+            mainHandler.post { finish() }
         } catch (e: Exception) {
-            Log.e(TAG, "异常", e)
-            appendLog("异常: " + e.message)
+            Log.e(TAG, "Step2 异常", e)
+            appendLog("第二步异常: " + e.message)
             busy = false
         }
     }

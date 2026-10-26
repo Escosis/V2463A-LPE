@@ -29,14 +29,21 @@ object Prefs {
     private const val KEY_APP_ENABLED = "app_enabled"
     private const val KEY_AUTO_SOFT_REBOOT = "auto_soft_reboot"
     private const val KEY_AUTO_CHECK_UPDATE = "auto_check_update"
-    private const val KEY_CUSTOM_PRELOAD = "custom_preload"
+    private const val KEY_PRELOAD_MODE = "preload_mode"       // "auto" | "custom" | "version"
+    private const val KEY_PRELOAD_VERSION = "preload_version"
     private const val KEY_CUSTOM_PRELOAD_NAME = "custom_preload_name"
 
-    fun isCustomPreload(context: Context): Boolean =
-        sp(context).getBoolean(KEY_CUSTOM_PRELOAD, false)
+    fun getPreloadMode(context: Context): String =
+        sp(context).getString(KEY_PRELOAD_MODE, "auto") ?: "auto"
 
-    fun setCustomPreload(context: Context, v: Boolean) =
-        sp(context).edit().putBoolean(KEY_CUSTOM_PRELOAD, v).apply()
+    fun setPreloadMode(context: Context, mode: String) =
+        sp(context).edit().putString(KEY_PRELOAD_MODE, mode).apply()
+
+    fun getPreloadVersion(context: Context): String =
+        sp(context).getString(KEY_PRELOAD_VERSION, "") ?: ""
+
+    fun setPreloadVersion(context: Context, v: String) =
+        sp(context).edit().putString(KEY_PRELOAD_VERSION, v).apply()
 
     fun getCustomPreloadName(context: Context): String =
         sp(context).getString(KEY_CUSTOM_PRELOAD_NAME, "") ?: ""

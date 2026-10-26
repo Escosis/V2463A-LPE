@@ -141,7 +141,7 @@ private fun InfoCard(status: AppStatus) {
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
-            InfoRow(R.drawable.ic_tag, "应用版本", appVersion)
+            InfoRow(R.drawable.ic_apps, "应用版本", appVersion)
             InfoRow(R.drawable.ic_phone_android, "安卓版本", Build.VERSION.RELEASE)
             InfoRow(R.drawable.ic_developer_board, "内核版本", System.getProperty("os.version") ?: "?")
             InfoRow(R.drawable.ic_round_info, "设备型号", Build.MODEL)

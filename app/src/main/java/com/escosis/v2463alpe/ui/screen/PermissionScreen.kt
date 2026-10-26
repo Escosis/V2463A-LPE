@@ -364,7 +364,7 @@ fun PermissionScreen(onNavigateToPairing: () -> Unit) {
                 )
                 Card(modifier = Modifier.fillMaxWidth()) {
                     ArrowPreference(
-                        title = "测试锁屏界面",
+                        title = "测试锁屏提权面板（第一步）",
                         startAction = {
                             Icon(
                                 painterResource(R.drawable.ic_lock),
@@ -377,6 +377,25 @@ fun PermissionScreen(onNavigateToPairing: () -> Unit) {
                             val intent = Intent(context, LockScreenActivity::class.java).apply {
                                 putExtra("EXTRA_IS_TEST", true)
                                 putExtra(BootReceiver.EXTRA_MODE, BootReceiver.MODE_STEP1)
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(intent)
+                        },
+                    )
+                    ArrowPreference(
+                        title = "测试锁屏提权面板（第二步）",
+                        startAction = {
+                            Icon(
+                                painterResource(R.drawable.ic_lock),
+                                contentDescription = null,
+                                modifier = Modifier.padding(end = 6.dp).size(24.dp),
+                                tint = MiuixTheme.colorScheme.onSurface,
+                            )
+                        },
+                        onClick = {
+                            val intent = Intent(context, LockScreenActivity::class.java).apply {
+                                putExtra("EXTRA_IS_TEST", true)
+                                putExtra(BootReceiver.EXTRA_MODE, BootReceiver.MODE_STEP2)
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             }
                             context.startActivity(intent)

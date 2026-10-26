@@ -8,8 +8,10 @@ import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.ScrollableDefaults
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -17,8 +19,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -38,6 +42,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
@@ -52,8 +57,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.escosis.v2463alpe.AdbPairingHelper
 import com.escosis.v2463alpe.Prefs
+import com.escosis.v2463alpe.PreloadEntry
 import com.escosis.v2463alpe.PreloadPusher
 import com.escosis.v2463alpe.R
 import com.escosis.v2463alpe.ui.AppStateHolder
@@ -88,6 +96,48 @@ private const val BUSY_DISCONNECT = "disconnect"
 private const val BUSY_CONNECT = "connect"
 private const val BUSY_PUSH = "push"
 
+private enum class PreloadMatchState {
+    BOTH_MATCH,
+    KERNEL_ONLY,
+    MODEL_ONLY,
+    NEITHER_MATCH,
+}
+
+private fun computeMatchState(
+    entry: PreloadEntry?,
+    currentKernel: String,
+    currentModel: String,
+): PreloadMatchState {
+    if (entry == null) return PreloadMatchState.NEITHER_MATCH
+    val kernelMatch = entry.dirName == currentKernel
+    val modelMatch = entry.model.equals(currentModel, ignoreCase = true)
+    return when {
+        kernelMatch && modelMatch -> PreloadMatchState.BOTH_MATCH
+        kernelMatch -> PreloadMatchState.KERNEL_ONLY
+        modelMatch -> PreloadMatchState.MODEL_ONLY
+        else -> PreloadMatchState.NEITHER_MATCH
+    }
+}
+
+private fun matchStateText(state: PreloadMatchState): String = when (state) {
+    PreloadMatchState.BOTH_MATCH -> "型号与内核均匹配"
+    PreloadMatchState.KERNEL_ONLY -> "仅内核匹配"
+    PreloadMatchState.MODEL_ONLY -> "仅型号匹配"
+    PreloadMatchState.NEITHER_MATCH -> "型号与内核均不匹配"
+}
+
+private fun parseEntryKey(key: String): PreloadEntry? {
+    if (key.isBlank()) return null
+    val slash = key.indexOf('/')
+    if (slash <= 0) return null
+    val dir = key.substring(0, slash)
+    val file = key.substring(slash + 1)
+    if (!file.endsWith(".so", ignoreCase = true)) return null
+    val model = file.substring(0, file.length - 3)
+    if (model.isBlank()) return null
+    return PreloadEntry(dir, file, model)
+}
+
 @Composable
 fun PairingScreen() {
     val context = LocalContext.current
@@ -105,8 +155,13 @@ fun PairingScreen() {
     var showCmdDialog by remember { mutableStateOf(false) }
     var showPreloadSourceDialog by remember { mutableStateOf(false) }
 
-    var customPreloadActive by remember { mutableStateOf(Prefs.isCustomPreload(context)) }
-    var customPreloadName by remember { mutableStateOf(Prefs.getCustomPreloadName(context)) }
+    var preloadMode by remember { mutableStateOf(Prefs.getPreloadMode(context)) }
+    var preloadVersion by remember { mutableStateOf(Prefs.getPreloadVersion(context)) }
+    var customName by remember { mutableStateOf(Prefs.getCustomPreloadName(context)) }
+    var autoDetectResult by remember { mutableStateOf<PreloadPusher.AutoDetectResult?>(null) }
+    var assetEntries by remember { mutableStateOf<List<PreloadEntry>>(emptyList()) }
+    var currentKernel by remember { mutableStateOf(PreloadPusher.getCurrentKernelVersion()) }
+    var currentModel by remember { mutableStateOf(PreloadPusher.getCurrentModel()) }
 
     fun appendLog(msg: String) {
         val time = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
@@ -152,8 +207,8 @@ fun PairingScreen() {
                 }
             }
             if (result != null) {
-                customPreloadActive = true
-                customPreloadName = result
+                preloadMode = PreloadPusher.MODE_CUSTOM
+                customName = result
             }
         }
     }
@@ -163,7 +218,61 @@ fun PairingScreen() {
         if (inputHost.isEmpty()) {
             inputHost = getLocalIpAddress() ?: "127.0.0.1"
         }
+        withContext(Dispatchers.IO) {
+            currentKernel = PreloadPusher.getCurrentKernelVersion()
+            currentModel = PreloadPusher.getCurrentModel()
+            autoDetectResult = PreloadPusher.detectBestEntry(context)
+            assetEntries = PreloadPusher.listAssetEntries(context)
+        }
     }
+
+    LaunchedEffect(showPreloadSourceDialog) {
+        if (showPreloadSourceDialog) {
+            val data = withContext(Dispatchers.IO) {
+                val entries = PreloadPusher.listAssetEntries(context)
+                val detected = PreloadPusher.detectBestEntry(context)
+                entries to detected
+            }
+            assetEntries = data.first
+            autoDetectResult = data.second
+            currentKernel = PreloadPusher.getCurrentKernelVersion()
+            currentModel = PreloadPusher.getCurrentModel()
+        }
+    }
+
+    val selectedEntryForVersion = if (preloadMode == PreloadPusher.MODE_VERSION) {
+        assetEntries.firstOrNull { it.key == preloadVersion }
+            ?: parseEntryKey(preloadVersion)
+    } else null
+
+    val preloadMatchState: PreloadMatchState = when (preloadMode) {
+        PreloadPusher.MODE_CUSTOM -> PreloadMatchState.BOTH_MATCH
+        PreloadPusher.MODE_VERSION -> computeMatchState(
+            selectedEntryForVersion, currentKernel, currentModel
+        )
+        else -> {
+            val r = autoDetectResult
+            when {
+                r == null -> PreloadMatchState.NEITHER_MATCH
+                r.isDeviceMatch -> PreloadMatchState.BOTH_MATCH
+                else -> PreloadMatchState.KERNEL_ONLY
+            }
+        }
+    }
+
+    val preloadSummary = when (preloadMode) {
+        PreloadPusher.MODE_CUSTOM ->
+            "自定义：${customName.ifBlank { "custom.so" }}"
+        PreloadPusher.MODE_VERSION ->
+            if (preloadVersion.isBlank()) "内置：未指定"
+            else "内置：${matchStateText(preloadMatchState)}"
+        else ->
+            "自动检测：${matchStateText(preloadMatchState)}"
+    }
+
+    val showKernelMismatchHint = preloadMode != PreloadPusher.MODE_CUSTOM &&
+            (preloadMatchState == PreloadMatchState.MODEL_ONLY ||
+                    preloadMatchState == PreloadMatchState.NEITHER_MATCH)
 
     val logListState = rememberLazyListState()
 
@@ -314,6 +423,27 @@ fun PairingScreen() {
                                             }
                                         },
                                     )
+                                    ArrowPreference(
+                                        title = "重新配对",
+                                        summary = "重新输入配对端口与配对码",
+                                        modifier = Modifier.alpha(0.4f),
+                                        startAction = {
+                                            Icon(
+                                                painterResource(R.drawable.ic_replay),
+                                                contentDescription = null,
+                                                modifier = Modifier.padding(end = 6.dp).size(24.dp),
+                                                tint = MiuixTheme.colorScheme.onSurface,
+                                            )
+                                        },
+                                        onClick = {
+                                            if (busyAction != null) return@ArrowPreference
+                                            Toast.makeText(
+                                                context,
+                                                "请先断开连接后再重新配对",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        },
+                                    )
                                 }
 
                                 status.isPaired -> {
@@ -420,6 +550,14 @@ fun PairingScreen() {
                                 },
                                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                             )
+
+                            if (showKernelMismatchHint) {
+                                Text(
+                                    "提示：内核不匹配，提权将失败",
+                                    modifier = Modifier.padding(top = 4.dp),
+                                    color = MiuixTheme.colorScheme.error,
+                                )
+                            }
                         }
                         val pushBusy = busyAction == BUSY_PUSH
                         ArrowPreference(
@@ -459,10 +597,7 @@ fun PairingScreen() {
 
                         ArrowPreference(
                             title = "preload.so 来源",
-                            summary = if (customPreloadActive)
-                                "自定义：${customPreloadName.ifBlank { "custom.so" }}"
-                            else
-                                "默认（assets/preload.so）",
+                            summary = preloadSummary,
                             modifier = Modifier.alpha(
                                 if (busyAction != null) 0.4f else 1f
                             ),
@@ -568,53 +703,6 @@ fun PairingScreen() {
         )
     }
 
-    if (showPreloadSourceDialog) {
-        AlertDialog(
-            onDismissRequest = { showPreloadSourceDialog = false },
-            containerColor = MiuixTheme.colorScheme.surface,
-            titleContentColor = MiuixTheme.colorScheme.onSurface,
-            textContentColor = MiuixTheme.colorScheme.onSurface,
-            title = { Text("preload.so 来源", fontSize = 20.sp) },
-            text = {
-                Text(
-                    "默认使用应用内置的 preload.so，适配内核版本 6.6.89-android15-8-g1f71897ac249-abogki467805059-4k。\n\n" +
-                            "支持自定义 preload.so 文件，请确保所选文件与当前设备内核版本匹配，否则将提权失败。\n\n当前：" +
-                            if (customPreloadActive) {
-                                "自定义（${customPreloadName.ifBlank { "custom.so" }}）"
-                            } else {
-                                "默认"
-                            },
-                    color = MiuixTheme.colorScheme.onSurface,
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    showPreloadSourceDialog = false
-                    preloadPicker.launch(arrayOf("*/*"))
-                }) {
-                    Text("选择文件", color = MiuixTheme.colorScheme.primary)
-                }
-            },
-            dismissButton = {
-                if (customPreloadActive) {
-                    TextButton(onClick = {
-                        showPreloadSourceDialog = false
-                        PreloadPusher.clearCustomPreload(context)
-                        customPreloadActive = false
-                        customPreloadName = ""
-                        appendLog("已恢复默认 preload.so")
-                    }) {
-                        Text("恢复默认", color = MiuixTheme.colorScheme.primary)
-                    }
-                } else {
-                    TextButton(onClick = { showPreloadSourceDialog = false }) {
-                        Text("取消", color = MiuixTheme.colorScheme.primary)
-                    }
-                }
-            },
-        )
-    }
-
     if (showCmdDialog) {
         val cmdGrant = "adb shell pm grant ${context.packageName} android.permission.WRITE_SECURE_SETTINGS"
         val cmdPush = "adb push preload.so /data/local/tmp/preload.so && adb shell chmod 755 /data/local/tmp/preload.so"
@@ -675,6 +763,250 @@ fun PairingScreen() {
                 }
             },
         )
+    }
+
+    if (showPreloadSourceDialog) {
+        PreloadSourceDialog(
+            currentMode = preloadMode,
+            currentVersion = preloadVersion,
+            customName = customName,
+            autoDetectResult = autoDetectResult,
+            entries = assetEntries,
+            currentKernel = currentKernel,
+            currentModel = currentModel,
+            onDismiss = { showPreloadSourceDialog = false },
+            onSelectAuto = {
+                Prefs.setPreloadMode(context, PreloadPusher.MODE_AUTO)
+                preloadMode = PreloadPusher.MODE_AUTO
+                showPreloadSourceDialog = false
+                appendLog("preload.so 来源：自动检测")
+            },
+            onSelectCustom = {
+                showPreloadSourceDialog = false
+                preloadPicker.launch(arrayOf("*/*"))
+            },
+            onClearCustom = {
+                PreloadPusher.clearCustomPreload(context)
+                preloadMode = Prefs.getPreloadMode(context)
+                customName = ""
+                appendLog("已清除自定义 preload.so")
+            },
+            onSelectEntry = { entry ->
+                Prefs.setPreloadMode(context, PreloadPusher.MODE_VERSION)
+                Prefs.setPreloadVersion(context, entry.key)
+                preloadMode = PreloadPusher.MODE_VERSION
+                preloadVersion = entry.key
+                showPreloadSourceDialog = false
+                appendLog("preload.so 来源：内置 ${entry.model}@${entry.dirName}")
+            },
+        )
+    }
+}
+
+@Composable
+private fun PreloadSourceDialog(
+    currentMode: String,
+    currentVersion: String,
+    customName: String,
+    autoDetectResult: PreloadPusher.AutoDetectResult?,
+    entries: List<PreloadEntry>,
+    currentKernel: String,
+    currentModel: String,
+    onDismiss: () -> Unit,
+    onSelectAuto: () -> Unit,
+    onSelectCustom: () -> Unit,
+    onClearCustom: () -> Unit,
+    onSelectEntry: (PreloadEntry) -> Unit,
+) {
+    val sameKernel = entries.filter { it.dirName == currentKernel }
+    val otherKernel = entries.filter { it.dirName != currentKernel }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .padding(vertical = 48.dp),
+        ) {
+            Column {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text(
+                        "preload.so 来源",
+                        fontSize = 20.sp,
+                        color = MiuixTheme.colorScheme.onSurface,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "内核：${currentKernel.ifBlank { "未知" }}",
+                        fontSize = 12.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    )
+                    Text(
+                        "型号：${currentModel.ifBlank { "未知" }}",
+                        fontSize = 12.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    )
+                }
+
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 460.dp),
+                ) {
+                    item(key = "auto") {
+                        val subtitle = when {
+                            autoDetectResult == null ->
+                                "未匹配（当前内核 ${currentKernel.ifBlank { "未知" }}）"
+                            autoDetectResult.isDeviceMatch ->
+                                "匹配到：${autoDetectResult.entry.model}（型号与内核均匹配）"
+                            else ->
+                                "回退到：${autoDetectResult.entry.model}（仅内核匹配的其他型号）"
+                        }
+                        PreloadSourceOption(
+                            title = "自动检测",
+                            subtitle = subtitle,
+                            selected = currentMode == PreloadPusher.MODE_AUTO,
+                            onClick = onSelectAuto,
+                        )
+                    }
+
+                    item(key = "custom") {
+                        PreloadSourceOption(
+                            title = "选择自定义文件",
+                            subtitle = if (customName.isBlank())
+                                "尚未选择"
+                            else
+                                "已选：$customName",
+                            selected = currentMode == PreloadPusher.MODE_CUSTOM,
+                            onClick = onSelectCustom,
+                        )
+                    }
+
+                    if (customName.isNotBlank()) {
+                        item(key = "clear_custom") {
+                            PreloadSourceOption(
+                                title = "清除自定义文件",
+                                subtitle = "删除已保存的自定义 preload.so",
+                                selected = false,
+                                onClick = onClearCustom,
+                                showCheck = false,
+                            )
+                        }
+                    }
+
+                    if (sameKernel.isNotEmpty()) {
+                        item(key = "divider_current") {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "当前内核版本",
+                                fontSize = 13.sp,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                            )
+                        }
+                        items(sameKernel, key = { "cur_${it.key}" }) { entry ->
+                            val isDeviceMatch = entry.model.equals(currentModel, ignoreCase = true)
+                            PreloadSourceOption(
+                                title = entry.model,
+                                subtitle = if (isDeviceMatch)
+                                    "你的设备，内核匹配"
+                                else
+                                    "其他设备，内核匹配（可能提权失败）",
+                                selected = currentMode == PreloadPusher.MODE_VERSION
+                                        && currentVersion == entry.key,
+                                onClick = { onSelectEntry(entry) },
+                            )
+                        }
+                    } else {
+                        item(key = "no_same_kernel") {
+                            Text(
+                                "assets 中没有内核为 ${currentKernel.ifBlank { "未知" }} 的条目",
+                                fontSize = 12.sp,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                            )
+                        }
+                    }
+
+                    if (otherKernel.isNotEmpty()) {
+                        item(key = "divider_other") {
+                            Spacer(Modifier.height(12.dp))
+                            Text(
+                                "其他内核版本（不兼容）",
+                                fontSize = 13.sp,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                            )
+                        }
+                        items(otherKernel, key = { "oth_${it.key}" }) { entry ->
+                            PreloadSourceOption(
+                                title = entry.model,
+                                subtitle = entry.dirName,
+                                selected = currentMode == PreloadPusher.MODE_VERSION
+                                        && currentVersion == entry.key,
+                                onClick = { onSelectEntry(entry) },
+                            )
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("关闭", color = MiuixTheme.colorScheme.primary)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PreloadSourceOption(
+    title: String,
+    subtitle: String?,
+    selected: Boolean,
+    onClick: () -> Unit,
+    showCheck: Boolean = true,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(modifier = Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+            if (showCheck && selected) {
+                Icon(
+                    painterResource(R.drawable.ic_check),
+                    contentDescription = null,
+                    tint = MiuixTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                title,
+                color = MiuixTheme.colorScheme.onSurface,
+                fontSize = 15.sp,
+            )
+            if (subtitle != null) {
+                Text(
+                    subtitle,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    fontSize = 12.sp,
+                )
+            }
+        }
     }
 }
 
